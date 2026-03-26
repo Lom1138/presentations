@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>PatrickLomasney_ResearchPractice_Presentation</title>
+    <style>
+        body, html { margin: 0; padding: 0; overflow: hidden; background-color: #000; }
+        video { 
+            position: absolute; top: 0; left: 0;
+            width: 100vw; height: 100vh; object-fit: contain;
+            cursor: none;
+        }
+        #reverseVideo { visibility: hidden; }
+    </style>
+</head>
+<body>
+
+    <video id="forwardVideo" src="animation_forward.mp4"></video>
+    <video id="reverseVideo" src="animation_reversed.mp4"></video>
+
+    <script>
+        const forwardVideo = document.getElementById('forwardVideo');
+        const reverseVideo = document.getElementById('reverseVideo');
+        
+        // --- EDIT YOUR TIMESTAMPS HERE (in seconds) ---
+        const cuePoints = [0.000, 2.000, 4.500, 5.000, 5.500, 7.500, 8.000, 8.500, 9.000, 9.500, 10.000, 10.500, 11.000, 11.500, 13.533, 14.033, 14.533, 15.033, 15.533, 16.033, 18.000, 18.567, 19.067, 19.567, 21.567, 22.033, 23.533, 25.033, 26.533, 27.567, 29.500, 31.500, 33.500, 35.500]; 
+        
+        let currentCue = 0;
+        let isPlaying = false;
+        let videoDuration = 0;
+        let isReverseVideoAvailable = true;
+
+        reverseVideo.addEventListener('error', () => {
+            console.warn('Reversed video not found. Fallback to "jump back" navigation enabled.');
+            isReverseVideoAvailable = false;
+            reverseVideo.style.display = 'none';
+        });
+
+        forwardVideo.addEventListener('loadedmetadata', () => {
+            videoDuration = forwardVideo.duration;
+            forwardVideo.currentTime = cuePoints[0];
+        });
+
+        function playToNextCue() {
+            if (currentCue < cuePoints.length - 1 && !isPlaying) {
+                isPlaying = true;
+                forwardVideo.style.visibility = 'visible';
+                if (isReverseVideoAvailable) {
+                    reverseVideo.style.visibility = 'hidden';
+                }
+                const nextCueTime = cuePoints[currentCue + 1];
+                forwardVideo.play();
+                const checkTime = setInterval(() => {
+                    if (forwardVideo.currentTime >= nextCueTime) {
+                        forwardVideo.pause();
+                        forwardVideo.currentTime = nextCueTime;
+                        clearInterval(checkTime);
+                        currentCue++;
+                        isPlaying = false;
+                    }
+                }, 10);
+            }
+        }
+        
+        function playToPreviousCue() {
+            if (currentCue > 0 && !isPlaying) {
+                isPlaying = true;
+                const previousCueTimeForward = cuePoints[currentCue - 1];
+                const currentCueTimeForward = cuePoints[currentCue];
+                const reverseStartTime = videoDuration - currentCueTimeForward;
+                const reverseEndTime = videoDuration - previousCueTimeForward;
+                
+                reverseVideo.currentTime = reverseStartTime;
+
+                reverseVideo.addEventListener('seeked', () => {
+                    reverseVideo.style.visibility = 'visible';
+                    forwardVideo.style.visibility = 'hidden';
+                    reverseVideo.play();
+
+                    const checkTime = setInterval(() => {
+                        if (reverseVideo.currentTime >= reverseEndTime) {
+                            reverseVideo.pause();
+                            clearInterval(checkTime);
+                            
+                            // Set the time on the hidden forward video
+                            forwardVideo.currentTime = previousCueTimeForward;
+
+                            // Wait for the forward video to be ready...
+                            forwardVideo.addEventListener('seeked', () => {
+                                // --- FIX: Make the forward video visible BEFORE hiding the reverse one ---
+                                forwardVideo.style.visibility = 'visible';
+                                reverseVideo.style.visibility = 'hidden'; // This happens immediately after.
+                                
+                                currentCue--;
+                                isPlaying = false;
+                            }, { once: true });
+                        }
+                    }, 10);
+                }, { once: true });
+            }
+        }
+        
+        function jumpToPreviousCue() {
+            if (currentCue > 0 && !isPlaying) {
+                currentCue--;
+                forwardVideo.currentTime = cuePoints[currentCue];
+            }
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'ArrowRight' || event.key === ' ' || event.key === 'PageDown') { 
+                event.preventDefault();
+                playToNextCue();
+            }
+            if (event.key === 'ArrowLeft' || event.key === 'PageUp') { 
+                event.preventDefault();
+                if (isReverseVideoAvailable) {
+                    playToPreviousCue();
+                } else {
+                    jumpToPreviousCue();
+                }
+            }
+        }
+        
+        document.addEventListener('keydown', handleKeyPress);
+    </script>
+</body>
+</html>
