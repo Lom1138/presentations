@@ -65,10 +65,15 @@
         const cuePoints = [0, 1, 2, 3, 4, 5]; 
         
         let currentCue = 0;
+        let targetCue = 0;
         let isPlaying = false;
         let videoDuration = 0;
         let isReverseVideoAvailable = true;
-        let presentationReady = false;
+        let presentationReady = false; // Prevents keys until loaded
+        let playbackInterval = null;
+
+        let reverseSeekHandler = null;
+        let forwardSeekHandler = null;
 
         function fetchVideoAsBlob(url, progressElement) {
             return new Promise((resolve) => {
@@ -134,71 +139,116 @@
             forwardVideo.currentTime = cuePoints[0];
         });
 
+        // --- THE SNAP MECHANIC ---
+        function snapToCue(targetIndex) {
+            clearInterval(playbackInterval);
+            forwardVideo.pause();
+            reverseVideo.pause();
+            
+            if (reverseSeekHandler) reverseVideo.removeEventListener('seeked', reverseSeekHandler);
+            if (forwardSeekHandler) forwardVideo.removeEventListener('seeked', forwardSeekHandler);
+            
+            currentCue = targetIndex;
+            targetCue = targetIndex;
+            isPlaying = false;
+            
+            forwardVideo.currentTime = cuePoints[currentCue];
+            forwardVideo.style.visibility = 'visible';
+            reverseVideo.style.visibility = 'hidden';
+        }
+
         function playToNextCue() {
-            if (currentCue < cuePoints.length - 1 && !isPlaying) {
+            if (isPlaying) {
+                snapToCue(Math.max(currentCue, targetCue));
+                return;
+            }
+
+            if (currentCue < cuePoints.length - 1) {
                 isPlaying = true;
+                targetCue = currentCue + 1;
+                
                 forwardVideo.style.visibility = 'visible';
-                if (isReverseVideoAvailable) {
-                    reverseVideo.style.visibility = 'hidden';
-                }
-                const nextCueTime = cuePoints[currentCue + 1];
+                if (isReverseVideoAvailable) reverseVideo.style.visibility = 'hidden';
+                
+                const nextCueTime = cuePoints[targetCue];
                 forwardVideo.play();
-                const checkTime = setInterval(() => {
+                
+                playbackInterval = setInterval(() => {
                     if (forwardVideo.currentTime >= nextCueTime) {
-                        forwardVideo.pause();
-                        forwardVideo.currentTime = nextCueTime;
-                        clearInterval(checkTime);
-                        currentCue++;
-                        isPlaying = false;
+                        snapToCue(targetCue);
                     }
                 }, 10);
             }
         }
         
         function playToPreviousCue() {
-            if (currentCue > 0 && !isPlaying) {
+            if (isPlaying) {
+                snapToCue(Math.min(currentCue, targetCue));
+                return;
+            }
+
+            if (currentCue > 0) {
                 isPlaying = true;
-                const previousCueTimeForward = cuePoints[currentCue - 1];
-                const currentCueTimeForward = cuePoints[currentCue];
-                const reverseStartTime = videoDuration - currentCueTimeForward;
-                const reverseEndTime = videoDuration - previousCueTimeForward;
+                targetCue = currentCue - 1;
+                
+                const reverseStartTime = videoDuration - cuePoints[currentCue];
+                const reverseEndTime = videoDuration - cuePoints[targetCue];
                 
                 reverseVideo.currentTime = reverseStartTime;
 
-                reverseVideo.addEventListener('seeked', () => {
+                reverseSeekHandler = () => {
+                    reverseSeekHandler = null; 
+                    if (!isPlaying) return;
+
                     reverseVideo.style.visibility = 'visible';
                     forwardVideo.style.visibility = 'hidden';
                     reverseVideo.play();
 
-                    const checkTime = setInterval(() => {
+                    playbackInterval = setInterval(() => {
                         if (reverseVideo.currentTime >= reverseEndTime) {
+                            clearInterval(playbackInterval);
                             reverseVideo.pause();
-                            clearInterval(checkTime);
                             
-                            forwardVideo.currentTime = previousCueTimeForward;
+                            forwardVideo.currentTime = cuePoints[targetCue];
 
-                            forwardVideo.addEventListener('seeked', () => {
-                                forwardVideo.style.visibility = 'visible';
-                                reverseVideo.style.visibility = 'hidden';
-                                
-                                currentCue--;
-                                isPlaying = false;
-                            }, { once: true });
+                            forwardSeekHandler = () => {
+                                forwardSeekHandler = null;
+                                if (!isPlaying) return;
+                                snapToCue(targetCue);
+                            };
+                            forwardVideo.addEventListener('seeked', forwardSeekHandler, { once: true });
                         }
                     }, 10);
-                }, { once: true });
+                };
+                
+                reverseVideo.addEventListener('seeked', reverseSeekHandler, { once: true });
             }
         }
         
         function jumpToPreviousCue() {
-            if (currentCue > 0 && !isPlaying) {
+            if (isPlaying) {
+                snapToCue(Math.min(currentCue, targetCue));
+                return;
+            }
+            if (currentCue > 0) {
                 currentCue--;
+                targetCue = currentCue;
                 forwardVideo.currentTime = cuePoints[currentCue];
             }
         }
 
         function handleKeyPress(event) {
             if (!presentationReady) return;
+
+            // Fullscreen Toggle
+            if (event.key.toLowerCase() === 'f') {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(e => console.log(e));
+                } else {
+                    document.exitFullscreen();
+                }
+                return;
+            }
 
             if (event.key === 'ArrowRight' || event.key === ' ' || event.key === 'PageDown') { 
                 event.preventDefault();
