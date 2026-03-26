@@ -2,39 +2,132 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>PatrickLomasney_ResearchPractice_Presentation</title>
+    <title>AE Presentation (Seamless Reverse)</title>
     <style>
-        body, html { margin: 0; padding: 0; overflow: hidden; background-color: #000; }
+        body, html { margin: 0; padding: 0; overflow: hidden; background-color: #000; color: #fff; font-family: sans-serif; }
         video { 
             position: absolute; top: 0; left: 0;
             width: 100vw; height: 100vh; object-fit: contain;
             cursor: none;
         }
         #reverseVideo { visibility: hidden; }
+
+        #loadingScreen {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            background-color: #000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+
+        .loading-text {
+            font-size: 1.2rem;
+            margin-bottom: 10px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .progress-container {
+            display: flex;
+            gap: 20px;
+            font-family: monospace;
+            font-size: 1rem;
+            color: #aaa;
+        }
     </style>
 </head>
 <body>
 
-    <video id="forwardVideo" src="animation_forward.mp4"></video>
-    <video id="reverseVideo" src="animation_reversed.mp4"></video>
+    <video id="forwardVideo" preload="auto"></video>
+    <video id="reverseVideo" preload="auto"></video>
+
+    <div id="loadingScreen">
+        <div class="loading-text">Loading Presentation</div>
+        <div class="progress-container">
+            <div id="forwardProgress">Forward: 0%</div>
+            <div id="reverseProgress">Reverse: 0%</div>
+        </div>
+    </div>
 
     <script>
         const forwardVideo = document.getElementById('forwardVideo');
         const reverseVideo = document.getElementById('reverseVideo');
+        const loadingScreen = document.getElementById('loadingScreen');
         
+        const forwardProgressText = document.getElementById('forwardProgress');
+        const reverseProgressText = document.getElementById('reverseProgress');
+
         // --- EDIT YOUR TIMESTAMPS HERE (in seconds) ---
-        const cuePoints = [0.000, 2.000, 4.500, 5.000, 5.500, 7.500, 8.000, 8.500, 9.000, 9.500, 10.000, 10.500, 11.000, 11.500, 13.533, 14.033, 14.533, 15.033, 15.533, 16.033, 18.000, 18.567, 19.067, 19.567, 21.567, 22.033, 23.533, 25.033, 26.533, 27.567, 29.500, 31.500, 33.500, 35.500]; 
+        const cuePoints = [0, 1, 2, 3, 4, 5]; 
         
         let currentCue = 0;
         let isPlaying = false;
         let videoDuration = 0;
         let isReverseVideoAvailable = true;
+        let presentationReady = false;
 
-        reverseVideo.addEventListener('error', () => {
-            console.warn('Reversed video not found. Fallback to "jump back" navigation enabled.');
-            isReverseVideoAvailable = false;
-            reverseVideo.style.display = 'none';
-        });
+        function fetchVideoAsBlob(url, progressElement) {
+            return new Promise((resolve) => {
+                const xhr = new XMLHttpRequest();
+                xhr.open('GET', url, true);
+                xhr.responseType = 'blob';
+
+                xhr.onprogress = function(event) {
+                    if (event.lengthComputable) {
+                        const percentComplete = Math.round((event.loaded / event.total) * 100);
+                        progressElement.innerText = `${url.split('.')[0]}: ${percentComplete}%`;
+                    }
+                };
+
+                xhr.onload = function() {
+                    if (this.status === 200) {
+                        const videoBlob = this.response;
+                        const videoObjectURL = URL.createObjectURL(videoBlob);
+                        resolve({ success: true, url: videoObjectURL });
+                    } else {
+                        resolve({ success: false });
+                    }
+                };
+
+                xhr.onerror = function() {
+                    resolve({ success: false });
+                };
+
+                xhr.send();
+            });
+        }
+
+        async function loadPresentation() {
+            const [forwardResult, reverseResult] = await Promise.all([
+                fetchVideoAsBlob('animation_forward.mp4', forwardProgressText),
+                fetchVideoAsBlob('animation_reversed.mp4', reverseProgressText)
+            ]);
+
+            if (forwardResult.success) {
+                forwardVideo.src = forwardResult.url;
+            } else {
+                alert("Critical Error: Could not load the main presentation video.");
+                return;
+            }
+
+            if (reverseResult.success) {
+                reverseVideo.src = reverseResult.url;
+            } else {
+                console.warn('Reversed video not found. Fallback to "jump back" navigation enabled.');
+                isReverseVideoAvailable = false;
+                reverseVideo.style.display = 'none';
+                reverseProgressText.innerText = 'Reverse: N/A';
+            }
+
+            setTimeout(() => {
+                loadingScreen.style.display = 'none';
+                presentationReady = true;
+            }, 500);
+        }
 
         forwardVideo.addEventListener('loadedmetadata', () => {
             videoDuration = forwardVideo.duration;
@@ -82,14 +175,11 @@
                             reverseVideo.pause();
                             clearInterval(checkTime);
                             
-                            // Set the time on the hidden forward video
                             forwardVideo.currentTime = previousCueTimeForward;
 
-                            // Wait for the forward video to be ready...
                             forwardVideo.addEventListener('seeked', () => {
-                                // --- FIX: Make the forward video visible BEFORE hiding the reverse one ---
                                 forwardVideo.style.visibility = 'visible';
-                                reverseVideo.style.visibility = 'hidden'; // This happens immediately after.
+                                reverseVideo.style.visibility = 'hidden';
                                 
                                 currentCue--;
                                 isPlaying = false;
@@ -108,6 +198,8 @@
         }
 
         function handleKeyPress(event) {
+            if (!presentationReady) return;
+
             if (event.key === 'ArrowRight' || event.key === ' ' || event.key === 'PageDown') { 
                 event.preventDefault();
                 playToNextCue();
@@ -123,6 +215,8 @@
         }
         
         document.addEventListener('keydown', handleKeyPress);
+
+        loadPresentation();
     </script>
 </body>
 </html>
